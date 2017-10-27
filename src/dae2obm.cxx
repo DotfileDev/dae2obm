@@ -66,7 +66,14 @@ Mesh load_mesh(tinyxml2::XMLNode* mesh_node, const std::string_view mesh_id) {
         }
         vertex_attributes_node = vertex_attributes_node->NextSiblingElement("source");
     }
-    // TODO: Indices are located in <polylist><vcount>.
+    const auto indices_node = mesh_node->FirstChildElement("polylist");
+    if(indices_node == nullptr) {
+        std::cerr << "Error: Indices node was not found; exiting...\n";
+        std::exit(6);
+    }
+    const std::size_t indices_count = indices_node->UnsignedAttribute("count");
+    check_present_attributes_and_load_indices(indices_node, indices_count, mesh.present_attributes,
+            mesh.position_indices, mesh.tex_coords_indices, mesh.normal_indices, mesh.color_indices);
     return mesh;
 }
 
@@ -117,6 +124,22 @@ bool load_colors(std::vector<Vector3>& target, tinyxml2::XMLElement* colors_node
         colors_array >> color.x >> color.y >> color.z;
     }
     std::cout << "Log:   All colors loaded.\n";
+    return true;
+}
+
+bool check_present_attributes_and_load_indices(tinyxml2::XMLElement* indices_node, const std::size_t count,
+        uint8_t& attribs, std::vector<std::size_t>& position_indices, std::vector<std::size_t>& normal_indices,
+        std::vector<std::size_t>& tex_coords_indices, std::vector<std::size_t>& color_indices) {
+    // TODO: Check if attributes are present.
+    attribs = POSITIONS_PRESENT | TEX_COORDS_PRESENT | NORMALS_PRESENT | COLORS_PRESENT;
+    std::stringstream indices_stream{indices_node->FirstChildElement("p")->GetText()};
+    for(std::size_t i{}; i < count / 4; ++i) {
+        auto& posi = position_indices.emplace_back();
+        auto& txci = tex_coords_indices.emplace_back();
+        auto& nrmi = normal_indices.emplace_back();
+        auto& clri = color_indices.emplace_back();
+        indices_stream >> posi >> txci >> nrmi >> clri;
+    }
     return true;
 }
 
