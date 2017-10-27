@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -209,5 +210,10 @@ int main(const int argc, const char* argv[]) {
         std::cout << "Usage: dae2obm [src.dae] [dest.obm]\n";
         return 0;
     }
-    return convert(argv[1], argv[2]);
+    const auto start_time = std::chrono::steady_clock::now();
+    const auto exit_code = convert(argv[1], argv[2]);
+    const auto end_time = std::chrono::steady_clock::now();
+    const std::chrono::duration<float> elapsed_time = end_time - start_time;
+    std::cout << "Log:   Conversion time: " << elapsed_time.count() << "s.\n";
+    return exit_code;
 }
