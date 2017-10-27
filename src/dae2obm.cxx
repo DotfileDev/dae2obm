@@ -3,10 +3,11 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <fstream>
 #include <iostream>
 #include <sstream>
 
-int convert(const std::string_view input_file_name, [[maybe_unused]] const std::string_view output_file_name) {
+int convert(const std::string_view input_file_name, const std::string_view output_file_name) {
     tinyxml2::XMLDocument collada_file{};
     const auto load_file_error = collada_file.LoadFile(input_file_name.data());
     if(load_file_error != tinyxml2::XMLError::XML_SUCCESS) {
@@ -19,8 +20,12 @@ int convert(const std::string_view input_file_name, [[maybe_unused]] const std::
         return 2;
     }
     const auto meshes = load_meshes(collada_root_node);
-    // TODO: Here we'll save all meshes to *.obm file :)
-    std::cout << "Success!\n";
+    const auto write_success = write_meshes(output_file_name, meshes);
+    if(!write_success) {
+        std::cerr << "Failed to write to file \"" << output_file_name << "\"; exiting...";
+        return 7;
+    }
+    std::cout << "Log:   Model converted with no errors.\n";
     return 0;
 }
 
@@ -32,14 +37,13 @@ std::vector<Mesh> load_meshes(tinyxml2::XMLElement* collada_root_node) {
         std::exit(3);
     }
     while(geometry != nullptr) {
-        std::cout << "Geometry found!\n";
         const auto mesh_id = geometry->Attribute("id", nullptr);
         const auto mesh_node = geometry->FirstChildElement("mesh");
         if(mesh_node == nullptr) {
             std::cout << "Geometry doesn't contain \"mesh\" node; exiting...";
             std::exit(4);
         }
-        std::cout << "Mesh id: " << mesh_id << '\n';
+        std::cout << "Log:   Current mesh id: " << mesh_id << '\n';
         meshes.emplace_back(load_mesh(mesh_node, mesh_id));
         geometry = geometry->NextSiblingElement();
     }
@@ -80,9 +84,9 @@ Mesh load_mesh(tinyxml2::XMLNode* mesh_node, const std::string_view mesh_id) {
 bool load_positions(std::vector<Vector3>& target, tinyxml2::XMLElement* positions_node) {
     // TODO: Collada provides additional info about vertices in <technique_common>.
     const auto positions_array_node{positions_node->FirstChildElement("float_array")};
-    const std::size_t positions_count{positions_node->UnsignedAttribute("count")};
+    const std::size_t positions_count{positions_array_node->UnsignedAttribute("count")};
     std::stringstream positions_array{positions_array_node->GetText()};
-    for(std::size_t i{positions_count / 3}; i < positions_count / 3; ++i) {
+    for(std::size_t i{}; i < positions_count / 3; ++i) {
         auto& position = target.emplace_back();
         positions_array >> position.x >> position.y >> position.z;
     }
@@ -92,9 +96,9 @@ bool load_positions(std::vector<Vector3>& target, tinyxml2::XMLElement* position
 
 bool load_normals(std::vector<Vector3>& target, tinyxml2::XMLElement* normals_node) {
     const auto normals_array_node{normals_node->FirstChildElement("float_array")};
-    const std::size_t normals_count{normals_node->UnsignedAttribute("count")};
+    const std::size_t normals_count{normals_array_node->UnsignedAttribute("count")};
     std::stringstream normals_array{normals_array_node->GetText()};
-    for(std::size_t i{normals_count / 3}; i < normals_count / 3; ++i) {
+    for(std::size_t i{}; i < normals_count / 3; ++i) {
         auto& normal = target.emplace_back();
         normals_array >> normal.x >> normal.y >> normal.z;
     }
@@ -104,9 +108,9 @@ bool load_normals(std::vector<Vector3>& target, tinyxml2::XMLElement* normals_no
 
 bool load_tex_coords(std::vector<Vector2>& target, tinyxml2::XMLElement* tex_coords_node) {
     const auto tex_coords_array_node{tex_coords_node->FirstChildElement("float_array")};
-    const std::size_t tex_coords_count{tex_coords_node->UnsignedAttribute("count")};
+    const std::size_t tex_coords_count{tex_coords_array_node->UnsignedAttribute("count")};
     std::stringstream tex_coords_array{tex_coords_array_node->GetText()};
-    for(std::size_t i{tex_coords_count / 3}; i < tex_coords_count / 3; ++i) {
+    for(std::size_t i{}; i < tex_coords_count / 2; ++i) {
         auto& tex_coords = target.emplace_back();
         tex_coords_array >> tex_coords.x >> tex_coords.y;
     }
@@ -117,9 +121,9 @@ bool load_tex_coords(std::vector<Vector2>& target, tinyxml2::XMLElement* tex_coo
 
 bool load_colors(std::vector<Vector3>& target, tinyxml2::XMLElement* colors_node) {
     const auto colors_array_node{colors_node->FirstChildElement("float_array")};
-    const std::size_t colors_count{colors_node->UnsignedAttribute("count")};
+    const std::size_t colors_count{colors_array_node->UnsignedAttribute("count")};
     std::stringstream colors_array{colors_array_node->GetText()};
-    for(std::size_t i{colors_count / 3}; i < colors_count / 3; ++i) {
+    for(std::size_t i{}; i < colors_count / 3; ++i) {
         auto& color = target.emplace_back();
         colors_array >> color.x >> color.y >> color.z;
     }
@@ -139,6 +143,63 @@ bool check_present_attributes_and_load_indices(tinyxml2::XMLElement* indices_nod
         auto& nrmi = normal_indices.emplace_back();
         auto& clri = color_indices.emplace_back();
         indices_stream >> posi >> txci >> nrmi >> clri;
+    }
+    return true;
+}
+
+bool write_meshes(const std::string_view file_name, const std::vector<Mesh>& meshes) {
+    std::fstream output_file{file_name.data(), std::ios::out | std::ios::binary | std::ios::trunc};
+    if(!output_file.good()) {
+        return false;
+    }
+    const auto meshes_count = static_cast<std::uint8_t>(meshes.size());
+    output_file.write("OBMF", 4)
+            .write(reinterpret_cast<const char*>(&meshes_count), 1);
+    for(const auto& mesh : meshes) {
+        const auto positions_count = static_cast<std::uint32_t>(mesh.positions.size());
+        const auto attributes_count = static_cast<std::uint32_t>(mesh.tex_coords.size());
+        const auto positions_indices_count = static_cast<std::uint32_t>(mesh.position_indices.size());
+        const auto attributes_indices_count = static_cast<std::uint32_t>(mesh.tex_coords.size());
+        output_file.write(reinterpret_cast<const char*>(&mesh.present_attributes), sizeof(mesh.present_attributes))
+                .write(reinterpret_cast<const char*>(&positions_count), sizeof(positions_count))
+                .write(reinterpret_cast<const char*>(&attributes_count), sizeof(attributes_count))
+                .write(reinterpret_cast<const char*>(&positions_indices_count), sizeof(positions_indices_count))
+                .write(reinterpret_cast<const char*>(&attributes_indices_count), sizeof(attributes_indices_count));
+        for(const auto& position : mesh.positions) {
+            output_file.write(reinterpret_cast<const char*>(&position.x), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&position.y), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&position.z), sizeof(float));
+        }
+        for(const auto& tex_coords : mesh.tex_coords) {
+            output_file.write(reinterpret_cast<const char*>(&tex_coords.x), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&tex_coords.y), sizeof(float));
+        }
+        for(const auto& normal : mesh.normals) {
+            output_file.write(reinterpret_cast<const char*>(&normal.x), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&normal.y), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&normal.z), sizeof(float));
+        }
+        for(const auto& color : mesh.colors) {
+            output_file.write(reinterpret_cast<const char*>(&color.x), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&color.y), sizeof(float))
+                    .write(reinterpret_cast<const char*>(&color.z), sizeof(float));
+        }
+        for(const auto& position_index : mesh.position_indices) {
+            const auto index = static_cast<std::uint32_t>(position_index);
+            output_file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+        }
+        for(const auto& tex_coords_index : mesh.tex_coords_indices) {
+            const auto index = static_cast<std::uint32_t>(tex_coords_index);
+            output_file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+        }
+        for(const auto& normal_index : mesh.normal_indices) {
+            const auto index = static_cast<std::uint32_t>(normal_index);
+            output_file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+        }
+        for(const auto& color_index : mesh.color_indices) {
+            const auto index = static_cast<std::uint32_t>(color_index);
+            output_file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+        }
     }
     return true;
 }
