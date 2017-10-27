@@ -4,9 +4,7 @@
 #include <cstring>
 
 #include <chrono>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 
 int convert(const std::string_view input_file_name, const std::string_view output_file_name) {
     tinyxml2::XMLDocument collada_file{};
@@ -26,7 +24,6 @@ int convert(const std::string_view input_file_name, const std::string_view outpu
         std::cerr << "Failed to write to file \"" << output_file_name << "\"; exiting...";
         return 7;
     }
-    std::cout << "Log:   Model converted with no errors.\n";
     return 0;
 }
 
@@ -44,7 +41,6 @@ std::vector<Mesh> load_meshes(tinyxml2::XMLElement* collada_root_node) {
             std::cout << "Geometry doesn't contain \"mesh\" node; exiting...";
             std::exit(4);
         }
-        std::cout << "Log:   Current mesh id: " << mesh_id << '\n';
         meshes.emplace_back(load_mesh(mesh_node, mesh_id));
         geometry = geometry->NextSiblingElement();
     }
@@ -58,13 +54,13 @@ Mesh load_mesh(tinyxml2::XMLNode* mesh_node, const std::string_view mesh_id) {
         const std::string vertex_attributes_node_id{vertex_attributes_node->Attribute("id")};
         const std::string attribute_name{mesh_id};
         if(vertex_attributes_node_id == attribute_name + "-positions") {
-            load_positions(mesh.positions, vertex_attributes_node);
-        } else if(vertex_attributes_node_id == attribute_name + "-normals") {
-            load_normals(mesh.normals, vertex_attributes_node);
+            mesh.positions = load_vector_vector3_from_xml_node(vertex_attributes_node);
         } else if(vertex_attributes_node_id == attribute_name + "-map-0") {
-            load_tex_coords(mesh.tex_coords, vertex_attributes_node);
+            mesh.tex_coords = load_vector_vector2_from_xml_node(vertex_attributes_node);
+        } else if(vertex_attributes_node_id == attribute_name + "-normals") {
+            mesh.normals = load_vector_vector3_from_xml_node(vertex_attributes_node);
         } else if(vertex_attributes_node_id == attribute_name + "-colors-Col") {
-            load_colors(mesh.colors, vertex_attributes_node);
+            mesh.colors = load_vector_vector3_from_xml_node(vertex_attributes_node);
         } else {
             std::cerr << "Error: Unknown mesh attribute: " << vertex_attributes_node_id << ".\n";
             std::exit(5);
@@ -82,59 +78,29 @@ Mesh load_mesh(tinyxml2::XMLNode* mesh_node, const std::string_view mesh_id) {
     return mesh;
 }
 
-bool load_positions(std::vector<Vector3>& target, tinyxml2::XMLElement* positions_node) {
-    // TODO: Collada provides additional info about vertices in <technique_common>.
-    const auto positions_array_node{positions_node->FirstChildElement("float_array")};
-    const std::size_t positions_count{positions_array_node->UnsignedAttribute("count")};
-    std::stringstream positions_array{positions_array_node->GetText()};
-    for(std::size_t i{}; i < positions_count / 3; ++i) {
-        auto& position = target.emplace_back();
-        positions_array >> position.x >> position.y >> position.z;
+std::vector<Vector2> load_vector_vector2_from_xml_node(const tinyxml2::XMLElement* node) {
+    std::vector<Vector2> vectors{};
+    const auto values_array_node{node->FirstChildElement("float_array")};
+    std::stringstream values_array_stream{values_array_node->GetText()};
+    while(!values_array_stream.eof()) {
+        vectors.emplace_back(load_vector2_from_sstream(values_array_stream));
     }
-    std::cout << "Log:   All positions loaded.\n";
-    return true;
+    return vectors;
 }
 
-bool load_normals(std::vector<Vector3>& target, tinyxml2::XMLElement* normals_node) {
-    const auto normals_array_node{normals_node->FirstChildElement("float_array")};
-    const std::size_t normals_count{normals_array_node->UnsignedAttribute("count")};
-    std::stringstream normals_array{normals_array_node->GetText()};
-    for(std::size_t i{}; i < normals_count / 3; ++i) {
-        auto& normal = target.emplace_back();
-        normals_array >> normal.x >> normal.y >> normal.z;
+std::vector<Vector3> load_vector_vector3_from_xml_node(const tinyxml2::XMLElement* node) {
+    std::vector<Vector3> vectors{};
+    const auto values_array_node{node->FirstChildElement("float_array")};
+    std::stringstream values_array_stream{values_array_node->GetText()};
+    while(!values_array_stream.eof()) {
+        vectors.emplace_back(load_vector3_from_sstream(values_array_stream));
     }
-    std::cout << "Log:   All normals loaded.\n";
-    return true;
-}
-
-bool load_tex_coords(std::vector<Vector2>& target, tinyxml2::XMLElement* tex_coords_node) {
-    const auto tex_coords_array_node{tex_coords_node->FirstChildElement("float_array")};
-    const std::size_t tex_coords_count{tex_coords_array_node->UnsignedAttribute("count")};
-    std::stringstream tex_coords_array{tex_coords_array_node->GetText()};
-    for(std::size_t i{}; i < tex_coords_count / 2; ++i) {
-        auto& tex_coords = target.emplace_back();
-        tex_coords_array >> tex_coords.x >> tex_coords.y;
-    }
-    std::cout << "Log:   All texture coords loaded.\n";
-    return true;
-
-}
-
-bool load_colors(std::vector<Vector3>& target, tinyxml2::XMLElement* colors_node) {
-    const auto colors_array_node{colors_node->FirstChildElement("float_array")};
-    const std::size_t colors_count{colors_array_node->UnsignedAttribute("count")};
-    std::stringstream colors_array{colors_array_node->GetText()};
-    for(std::size_t i{}; i < colors_count / 3; ++i) {
-        auto& color = target.emplace_back();
-        colors_array >> color.x >> color.y >> color.z;
-    }
-    std::cout << "Log:   All colors loaded.\n";
-    return true;
+    return vectors;
 }
 
 bool check_present_attributes_and_load_indices(tinyxml2::XMLElement* indices_node, const std::size_t count,
-        uint8_t& attribs, std::vector<std::size_t>& position_indices, std::vector<std::size_t>& normal_indices,
-        std::vector<std::size_t>& tex_coords_indices, std::vector<std::size_t>& color_indices) {
+        uint8_t& attribs, std::vector<std::uint32_t>& position_indices, std::vector<std::uint32_t>& normal_indices,
+        std::vector<std::uint32_t>& tex_coords_indices, std::vector<std::uint32_t>& color_indices) {
     // TODO: Check if attributes are present.
     attribs = POSITIONS_PRESENT | TEX_COORDS_PRESENT | NORMALS_PRESENT | COLORS_PRESENT;
     std::stringstream indices_stream{indices_node->FirstChildElement("p")->GetText()};
@@ -146,6 +112,18 @@ bool check_present_attributes_and_load_indices(tinyxml2::XMLElement* indices_nod
         indices_stream >> posi >> txci >> nrmi >> clri;
     }
     return true;
+}
+
+Vector2 load_vector2_from_sstream(std::stringstream& stream) {
+    Vector2 vec{};
+    stream >> vec.x >> vec.y;
+    return vec;
+}
+
+Vector3 load_vector3_from_sstream(std::stringstream& stream) {
+    Vector3 vec{};
+    stream >> vec.x >> vec.y >> vec.z;
+    return vec;
 }
 
 bool write_meshes(const std::string_view file_name, const std::vector<Mesh>& meshes) {
@@ -167,23 +145,16 @@ bool write_meshes(const std::string_view file_name, const std::vector<Mesh>& mes
                 .write(reinterpret_cast<const char*>(&positions_indices_count), sizeof(positions_indices_count))
                 .write(reinterpret_cast<const char*>(&attributes_indices_count), sizeof(attributes_indices_count));
         for(const auto& position : mesh.positions) {
-            output_file.write(reinterpret_cast<const char*>(&position.x), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&position.y), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&position.z), sizeof(float));
+            write_vector3(output_file, position);
         }
         for(const auto& tex_coords : mesh.tex_coords) {
-            output_file.write(reinterpret_cast<const char*>(&tex_coords.x), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&tex_coords.y), sizeof(float));
+            write_vector2(output_file, tex_coords);
         }
         for(const auto& normal : mesh.normals) {
-            output_file.write(reinterpret_cast<const char*>(&normal.x), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&normal.y), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&normal.z), sizeof(float));
+            write_vector3(output_file, normal);
         }
         for(const auto& color : mesh.colors) {
-            output_file.write(reinterpret_cast<const char*>(&color.x), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&color.y), sizeof(float))
-                    .write(reinterpret_cast<const char*>(&color.z), sizeof(float));
+            write_vector3(output_file, color);
         }
         for(const auto& position_index : mesh.position_indices) {
             const auto index = static_cast<std::uint32_t>(position_index);
@@ -205,6 +176,17 @@ bool write_meshes(const std::string_view file_name, const std::vector<Mesh>& mes
     return true;
 }
 
+void write_vector2(std::fstream& file, const Vector2& vec) {
+    file.write(reinterpret_cast<const char*>(&vec.x), sizeof(float))
+            .write(reinterpret_cast<const char*>(&vec.y), sizeof(float));
+}
+
+void write_vector3(std::fstream& file, const Vector3& vec) {
+    file.write(reinterpret_cast<const char*>(&vec.x), sizeof(float))
+            .write(reinterpret_cast<const char*>(&vec.y), sizeof(float))
+            .write(reinterpret_cast<const char*>(&vec.z), sizeof(float));
+}
+
 int main(const int argc, const char* argv[]) {
     if(argc != 3) {
         std::cout << "Usage: dae2obm [src.dae] [dest.obm]\n";
@@ -214,6 +196,6 @@ int main(const int argc, const char* argv[]) {
     const auto exit_code = convert(argv[1], argv[2]);
     const auto end_time = std::chrono::steady_clock::now();
     const std::chrono::duration<float> elapsed_time = end_time - start_time;
-    std::cout << "Log:   Conversion time: " << elapsed_time.count() << "s.\n";
+    std::cout << "Conversion time: " << elapsed_time.count() << "s.\n";
     return exit_code;
 }

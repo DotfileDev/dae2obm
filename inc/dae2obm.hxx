@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
+#include <fstream>
+#include <sstream>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include <tinyxml2.hxx>
@@ -22,38 +24,32 @@ struct Vector3 {
     float z;
 };
 
-//struct Animation {
-//};
-
 struct Mesh {
     std::uint8_t present_attributes{};
     std::vector<Vector3> positions;
     std::vector<Vector2> tex_coords;
     std::vector<Vector3> normals;
     std::vector<Vector3> colors;
-    std::vector<std::size_t> position_indices;
-    std::vector<std::size_t> tex_coords_indices;
-    std::vector<std::size_t> normal_indices;
-    std::vector<std::size_t> color_indices;
-    //std::vector<Animation>   animations;
-};
-
-struct Obm {
-    std::array<char, 4> header;         // Should be 'OBMF'.
-    uint8_t             meshes_count;
-    std::vector<Mesh>   meshes;
+    std::vector<std::uint32_t> position_indices;
+    std::vector<std::uint32_t> tex_coords_indices;
+    std::vector<std::uint32_t> normal_indices;
+    std::vector<std::uint32_t> color_indices;
 };
 
 int convert(const std::string_view input_file_name, const std::string_view output_file_name);
 
 std::vector<Mesh> load_meshes(tinyxml2::XMLElement* collada_root_node);
 Mesh load_mesh(tinyxml2::XMLNode* mesh_node, const std::string_view mesh_id);
-bool load_positions(std::vector<Vector3>& target, tinyxml2::XMLElement* positions_node);
-bool load_normals(std::vector<Vector3>& target, tinyxml2::XMLElement* normals_node);
-bool load_tex_coords(std::vector<Vector2>& target, tinyxml2::XMLElement* tex_coords_node);
-bool load_colors(std::vector<Vector3>& target, tinyxml2::XMLElement* colors_node);
 bool check_present_attributes_and_load_indices(tinyxml2::XMLElement* indices_node, const std::size_t count,
-        uint8_t& attribs, std::vector<std::size_t>& position_indices, std::vector<std::size_t>& normal_indices,
-        std::vector<std::size_t>& tex_coords_indices, std::vector<std::size_t>& color_indices);
+        uint8_t& attribs, std::vector<std::uint32_t>& position_indices, std::vector<std::uint32_t>& normal_indices,
+        std::vector<std::uint32_t>& tex_coords_indices, std::vector<std::uint32_t>& color_indices);
+
+std::vector<Vector2> load_vector_vector2_from_xml_node(const tinyxml2::XMLElement* node);
+std::vector<Vector3> load_vector_vector3_from_xml_node(const tinyxml2::XMLElement* node);
+
+Vector2 load_vector2_from_sstream(std::stringstream& stream);
+Vector3 load_vector3_from_sstream(std::stringstream& stream);
 
 bool write_meshes(const std::string_view file_name, const std::vector<Mesh>& meshes);
+void write_vector2(std::fstream& file, const Vector2& vec);
+void write_vector3(std::fstream& file, const Vector3& vec);
